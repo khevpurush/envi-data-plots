@@ -1,0 +1,92 @@
+"""
+keeling_curve_co2.py
+
+Plots the Mauna Loa atmospheric CO2 record (the "Keeling Curve") using the
+public monthly dataset jointly maintained by NOAA/GML and the Scripps
+Institution of Oceanography (UC San Diego) -- the same record started by
+Charles David Keeling in 1958.
+
+Data source (updated monthly, no API key needed):
+https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.txt
+
+Usage:
+    pip install pandas matplotlib numpy
+    python keeling_curve_co2.py
+Outputs:
+    keeling_curve.png  -- raw + seasonally-adjusted CO2, with trend annotation
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+DATA_URL = "https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.txt"
+
+COLUMN_NAMES = [
+    "year",
+    "month",
+    "decimal_date",
+    "average",          # monthly mean CO2, ppm
+    "deseasonalized",   # seasonal cycle removed
+    "ndays",
+    "sdev",
+    "unc",
+]
+
+
+def load_data(url: str = DATA_URL) -> pd.DataFrame:
+    """Download and parse the NOAA/Scripps Mauna Loa CO2 monthly file."""
+    df = pd.read_csv(
+        url,
+        comment="#",
+        delim_whitespace=True,
+        names=COLUMN_NAMES,
+    )
+    # -99.99 / -1 are NOAA's missing-value codes
+    df = df[df["average"] > 0].reset_index(drop=True)
+    return df
+
+
+def fit_linear_trend(df: pd.DataFrame) -> tuple[float, float]:
+    """Least-squares fit of ppm vs. decimal year -> (slope, intercept)."""
+    slope, intercept = np.polyfit(df["decimal_date"], df["average"], 1)
+    return slope, intercept
+
+
+def plot_co2(df: pd.DataFrame, out_path: str = "keeling_curve.png") -> None:
+    slope, intercept = fit_linear_trend(df)
+    trend_line = slope * df["decimal_date"] + intercept
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.plot(df["decimal_date"], df["average"], color="0.7", linewidth=1,
+             label="Monthly mean (raw)")
+    ax.plot(df["decimal_date"], df["deseasonalized"], color="#1b7837",
+             linewidth=1.8, label="Seasonally adjusted")
+    ax.plot(df["decimal_date"], trend_line, color="#b2182b", linestyle="--",
+             linewidth=1.5, label=f"Linear trend (~{slope:.2f} ppm/yr)")
+
+    ax.set_title("Atmospheric CO$_2$ at Mauna Loa Observatory (the Keeling Curve)")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("CO$_2$ concentration (ppm)")
+    ax.legend(loc="upper left")
+    ax.grid(alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    print(f"Saved plot to {out_path}")
+
+
+def main():
+    df = load_data()
+    first, last = df.iloc[0], df.iloc[-1]
+    print(f"Loaded {len(df)} monthly records "
+          f"({int(first.year)}-{int(first.month):02d} to "
+          f"{int(last.year)}-{int(last.month):02d})")
+    print(f"CO2 rose from {first['average']:.1f} ppm to {last['average']:.1f} ppm "
+          f"over that period.")
+    plot_co2(df)
+
+
+if __name__ == "__main__":
+    main()
